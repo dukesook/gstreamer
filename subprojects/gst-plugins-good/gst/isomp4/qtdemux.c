@@ -11690,6 +11690,289 @@ qtdemux_parse_stereo_svmi_atom (GstQTDemux * qtdemux, QtDemuxStream * stream,
   return TRUE;
 }
 
+static guint32
+parse_32 (const guint8 ** pos)
+{
+  guint32 value = QT_UINT32 (*pos);
+  *pos += 4;
+  return value;
+}
+
+static guint16
+parse_16 (const guint8 ** pos)
+{
+  guint16 value = QT_UINT16 (*pos);
+  *pos += 2;
+  return value;
+}
+
+static guint8
+parse_8 (const guint8 ** pos)
+{
+  guint8 value = QT_UINT8 (*pos);
+  *pos += 1;
+  return value;
+}
+
+static guint32
+parse_24 (const guint8 ** pos)
+{
+  guint32 value = QT_UINT32 (*pos);
+  *pos += 3;
+  return value;
+}
+
+
+static const gchar *
+qtdemux_identify_cmpd_type (guint16 * component_types, guint32 count)
+{
+  // ISO/IEC 23001-17 Table 1 - Component Types
+  const guint16 MONOCHROME = 0;
+  const guint16 LUMA_Y = 1;
+  const guint16 CHROMA_U = 2;
+  const guint16 CHROMA_V = 3;
+  const guint16 RED = 4;
+  const guint16 GREEN = 5;
+  const guint16 BLUE = 6;
+  const guint16 ALPHA = 7;
+  // const guint16 DEPTH = 8;
+  // const guint16 DISPARITY = 9;
+  // const guint16 PALETTE = 10;
+  // const guint16 FILTER_ARRAY = 11;
+  // const guint16 PADDED = 12;
+  // const guint16 CYAN = 13;
+  // const guint16 MAGENTA = 14;
+  // const guint16 YELLOW = 15;
+  // const guint16 KEY = 16;
+  if (count == 1) {
+    if (component_types[0] == MONOCHROME) {
+      return "GREY";
+    }
+  } else if (count == 3) {
+    if (component_types[0] == RED && component_types[1] == GREEN &&
+        component_types[2] == BLUE) {
+      return "RGB";
+    }
+    if (component_types[0] == LUMA_Y && component_types[1] == CHROMA_U &&
+        component_types[2] == CHROMA_V) {
+      return "Y42B";
+    }
+    if (component_types[0] == BLUE && component_types[1] == GREEN &&
+        component_types[2] == RED) {
+      return "BGR";
+    }
+  } else if (count == 4) {
+    if (component_types[0] == RED && component_types[1] == GREEN &&
+        component_types[2] == BLUE && component_types[3] == ALPHA) {
+      return "RGBA";
+    }
+  }
+
+  return NULL;
+}
+
+static gboolean
+qtdemux_parse_cmpd (GstQTDemux * qtdemux, GstCaps * caps,
+    const guint8 * const cmpd)
+{
+  const guint8 *pos = cmpd;
+  guint32 size = parse_32 (&pos);
+  guint32 fourcc = parse_32 (&pos);
+  guint32 component_count = parse_32 (&pos);
+  guint16 *component_types = g_new0 (guint16, component_count);
+  const gchar *cmpd_type;
+
+  if (size < 12) {
+    GST_ERROR_OBJECT (qtdemux, "cmpd too short");
+    goto error;
+  }
+
+  if (component_count == 0) {
+    GST_ERROR_OBJECT (qtdemux, "cmpd has no components");
+    goto error;
+  }
+
+  if (QT_UINT32 (&fourcc) != FOURCC_cmpd) {
+    GST_ERROR_OBJECT (qtdemux, "Expected fourcc: 'cmpd'");
+    goto error;
+  }
+
+  for (guint32 i = 0; i < component_count; i++) {
+    guint16 component_type = parse_16 (&pos);
+    component_types[i] = component_type;
+    if (component_type >= 0x8000) {
+      GST_ERROR_OBJECT (qtdemux, "Not yet implemented: cmpd component type");
+      goto error;
+    }
+  }
+
+  cmpd_type = qtdemux_identify_cmpd_type (component_types, component_count);
+  if (cmpd_type == NULL) {
+    GST_ERROR_OBJECT (qtdemux, "unsupported cmpd type");
+    goto error;
+  }
+  gst_caps_set_simple (caps, "format", G_TYPE_STRING, cmpd_type, NULL);
+
+  return FALSE;
+
+error:
+  return TRUE;
+}
+
+static gboolean
+qtdemux_parse_uncC (GstQTDemux * qtdemux, GstCaps * caps,
+    const guint8 * const uncC)
+{
+  struct component_t
+  {
+    guint16 index;
+    guint8 bit_depth;
+    guint8 format;
+    guint8 align_size;
+  };
+
+  // Parse uncC Header
+  const guint8 *pos = uncC;
+  guint32 size = parse_32 (&pos);
+  guint32 fourcc = parse_32 (&pos);
+  guint8 version = parse_8 (&pos);
+  guint32 flags = parse_24 (&pos);
+
+  if (size < 12) {
+    GST_ERROR_OBJECT (qtdemux, "uncC size is too short");
+    goto error;
+  }
+
+  if (QT_UINT32 (&fourcc) != FOURCC_uncC) {
+    GST_ERROR_OBJECT (qtdemux, "Expected fourcc: 'uncC'");
+    goto error;
+  }
+
+  if (version != 0) {
+    GST_ERROR_OBJECT (qtdemux, "Not implemented yet: uncC version");
+    goto error;
+  }
+
+  if (flags) {
+    GST_WARNING_OBJECT (qtdemux, "Not implemented yet: uncC flags");
+  }
+
+  // Parse uncC Data
+  guint32 profile = parse_32 (&pos);
+  guint32 component_count = parse_32 (&pos);
+  struct component_t *components = g_new0 (struct component_t, component_count);
+  for (guint32 i = 0; i < component_count; i++) {
+    components[i].index = parse_16 (&pos);
+    components[i].bit_depth = parse_8 (&pos) + 1;
+    components[i].format = parse_8 (&pos);
+    components[i].align_size = parse_8 (&pos);
+
+    if (components[i].bit_depth != 8) {
+      GST_ERROR_OBJECT (qtdemux, "Not implemented yet: High Bit Depth");
+      goto error;
+    }
+
+    if (components[i].format == 0) {
+      // Format = unsigned integer (default)
+    } else if (components[i].format == 1) {
+      GST_ERROR_OBJECT (qtdemux, "Not implemented yet: Floating Point Pixels");
+      goto error;
+    } else if (components[i].format == 2) {
+      GST_ERROR_OBJECT (qtdemux, "Not implemented yet: Complex Pixels");
+      goto error;
+    } else {
+      GST_ERROR_OBJECT (qtdemux, "Unrecognized component format");
+      goto error;
+    }
+
+    if (components[i].align_size != 0) {
+      GST_ERROR_OBJECT (qtdemux, "Not implemented yet: uncC align size");
+      goto error;
+    }
+  }
+  guint8 sampling_type = parse_8 (&pos);
+  guint8 interleave_type = parse_8 (&pos);
+  guint8 block_size = parse_8 (&pos);
+  guint8 block_flags = parse_8 (&pos);
+  guint32 pixel_size = parse_32 (&pos);
+  guint32 row_align_size = parse_32 (&pos);
+  guint32 tile_align_size = parse_32 (&pos);
+  guint32 num_tile_cols_minus_one = parse_32 (&pos);
+  guint32 num_tile_rows_minus_one = parse_32 (&pos);
+
+  if (profile != 0) {
+    GST_WARNING_OBJECT (qtdemux, "Not implemented yet: uncC profile");
+  }
+
+  if (component_count == 0) {
+    GST_ERROR_OBJECT (qtdemux, "uncC has no components");
+    goto error;
+  }
+
+  if (sampling_type == 0) {
+    // YCbCr 4:4:4 = No subsampling
+  } else if (sampling_type == 1) {
+    // YCbCr 4:2:2 subsampling
+  } else if (sampling_type == 2) {
+    // YCbCr 4:2:0 subsampling
+  } else if (sampling_type == 3) {
+    // YCbCr 4:1:1 subsampling
+  } else {
+    GST_ERROR_OBJECT (qtdemux, "Unrecognized sampling type");
+    goto error;
+  }
+
+  if (interleave_type == 0) {
+    GST_ERROR_OBJECT (qtdemux, "Not yet implemented: Component interleaving");
+    goto error;
+  } else if (interleave_type == 1) {
+    // Pixel interleaving
+  } else if (interleave_type == 2) {
+    GST_ERROR_OBJECT (qtdemux, "Not yet implemented: Mixed interleaving");
+    goto error;
+  } else if (interleave_type == 3) {
+    GST_ERROR_OBJECT (qtdemux, "Not yet implemented: Row interleaving");
+    goto error;
+  } else if (interleave_type == 4) {
+    GST_ERROR_OBJECT (qtdemux, "Not yet implemented: Tile interleaving");
+    goto error;
+  } else if (interleave_type == 5) {
+    GST_ERROR_OBJECT (qtdemux, "Not yet implemented: Multi-Y interleaving");
+    goto error;
+  } else {
+    GST_ERROR_OBJECT (qtdemux, "Unrecognized interleave type");
+    goto error;
+  }
+
+  if (block_size != 0 || block_flags != 0) {
+    GST_ERROR_OBJECT (qtdemux, "Not implemented yet: uncC block size");
+    goto error;
+  }
+
+  if (pixel_size != 0) {
+    // "If pixel_size is 0, no additional padding is present after
+    // each pixel. Otherwise, let PixelBytes be the number of bytes
+    // required to contain all component values of a single pixel"
+    GST_ERROR_OBJECT (qtdemux, "Not implemented yet: uncC pixel size");
+    goto error;
+  }
+
+  if (row_align_size != 0 || tile_align_size != 0) {
+    GST_ERROR_OBJECT (qtdemux, "Not implemented yet: uncC alignment size");
+    goto error;
+  }
+
+  if (num_tile_cols_minus_one != 0 || num_tile_rows_minus_one != 0) {
+    GST_ERROR_OBJECT (qtdemux, "Not implemented yet: uncC tiling");
+    goto error;
+  }
+
+  return FALSE;
+
+error:
+  return TRUE;
+}
+
 /* parse the traks.
  * With each track we associate a new QtDemuxStream that contains all the info
  * about the trak.
@@ -13067,6 +13350,59 @@ qtdemux_parse_trak (GstQTDemux * qtdemux, GNode * trak)
 
               len -= size + 8;
               vpcc_data += size + 8;
+            }
+
+            break;
+          }
+          case FOURCC_uncv:
+          {
+            entry->caps = gst_caps_new_empty_simple ("video/x-raw");;
+            const guint8 *child_box = stsd_entry_data + 86;
+            const guint32 UNCV_SIZE = QT_UINT32 (stsd_entry_data);
+            const guint8 *const UNCV_END = stsd_entry_data + UNCV_SIZE - 8;
+            gboolean found_cmpd = FALSE;
+            gboolean found_uncC = FALSE;
+
+            /* Parse child-boxes */
+            while (child_box <= UNCV_END) {
+              gboolean error = FALSE;
+              guint32 child_size = QT_UINT32 (child_box);
+              guint32 child_fourcc = QT_FOURCC (child_box + 4);
+              switch (child_fourcc) {
+                case FOURCC_uncC:
+                {
+                  found_uncC = TRUE;
+                  error = qtdemux_parse_uncC (qtdemux, entry->caps, child_box);
+                  break;
+                }
+                case FOURCC_cmpd:
+                {
+                  found_cmpd = TRUE;
+                  error = qtdemux_parse_cmpd (qtdemux, entry->caps, child_box);
+                  break;
+                }
+                default:
+                {
+                  printf ("Ignoring unknown child box: %.4s\n",
+                      (char *) &child_fourcc);
+                  GST_LOG_OBJECT (qtdemux, "Ignoring unknown uncv child: %.4s",
+                      (char *) &child_fourcc);
+                  // TODO - handle other boxes (pasp, btrt, etc.)
+                  break;
+                }
+              }
+              if (error) {
+                GST_ERROR_OBJECT (qtdemux, "Error parsing child box");
+                return GST_FLOW_ERROR;
+              }
+              child_box += child_size;
+            }
+
+            // Assert cmpd & uncC boxes are present
+            if (!found_cmpd || !found_uncC) {
+              GST_ERROR_OBJECT (qtdemux,
+                  "Missing required cmpd or uncC sub-box in uncv");
+              return GST_FLOW_ERROR;
             }
 
             break;
