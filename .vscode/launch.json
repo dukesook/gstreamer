@@ -34,11 +34,24 @@
       },
       "cwd": "${workspaceFolder}/${config:mesonbuild.buildFolder}/subprojects/gstreamer/tools/",
       "program": "${workspaceFolder}/${config:mesonbuild.buildFolder}/subprojects/gstreamer/tools/gst-launch-1.0",
+      // "args": [
+      //   "videotestsrc",
+      //   "!",
+      //   "autovideosink"
+      // ],
       "args": [
-        "videotestsrc",
+        "filesrc",
+        // "location=/home/sook/Pictures/uncompressed/gpac.mp4",
+        "location=/home/sook/Videos/gpac1025x1025.mp4",
+        "location=/home/sook/repos/gst-plugins-rs-gimi/gimimux/RGBA.mp4",
+        // "location=/home/sook/Pictures/MotionImagery/gimi_v06-04.mp4",
         "!",
-        "autovideosink"
-      ],
+        "decodebin",
+        "!",
+        "videoconvert",
+        "!",
+        "ximagesink"
+        ],
       "environment": [
         {
           "name": "GST_DEBUG",
