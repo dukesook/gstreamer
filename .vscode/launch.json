@@ -41,9 +41,9 @@
       // ],
       "args": [
         "filesrc",
-        // "location=/home/sook/Pictures/uncompressed/gpac.mp4",
-        "location=/home/sook/Videos/gpac1025x1025.mp4",
-        "location=/home/sook/repos/gst-plugins-rs-gimi/gimimux/RGBA.mp4",
+        // "location=/home/sook/Videos/gstreamer/rgb.mp4",
+        "location=/home/sook/Videos/gpac/gpac1025x1025.mp4",
+        // "location=/home/sook/repos/gst-plugins-rs-gimi/gimimux/RGBA.mp4",
         // "location=/home/sook/Pictures/MotionImagery/gimi_v06-04.mp4",
         "!",
         "decodebin",
