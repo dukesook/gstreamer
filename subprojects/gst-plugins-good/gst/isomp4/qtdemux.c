@@ -12155,7 +12155,10 @@ qtdemux_get_format_from_uncv (GstQTDemux * qtdemux,
       case GST_MAKE_FOURCC ('i', '4', '2', '0'):       // 8 bits  YUV  420 planar YCbCr
       case GST_MAKE_FOURCC ('n', 'v', '1', '2'):       // 8 bits  YUV  420 semiplanar YCbCr
       case GST_MAKE_FOURCC ('n', 'v', '2', '1'):       // 8 bits  YUV  420 semiplanar YCrCb
+        goto unsupported_feature;
       case GST_MAKE_FOURCC ('r', 'g', 'b', 'a'):       // 32 bits RGBA packed
+        format = format = GST_VIDEO_FORMAT_RGBA;
+        break;
       case GST_MAKE_FOURCC ('a', 'b', 'g', 'r'):       // 32 bits RGBA packed
       case GST_MAKE_FOURCC ('y', 'u', '2', '2'):       // 8 bits  YUV  422 planar YCbCr
       case GST_MAKE_FOURCC ('y', 'v', '2', '2'):       // 8 bits  YUV  422 planar YCrCb
@@ -12249,7 +12252,7 @@ qtdemux_get_format_from_uncv (GstQTDemux * qtdemux,
           cmpd->types[2] == COMPONENT_BLUE) {
         format = GST_VIDEO_FORMAT_RGB;
       }
-      if (cmpd->types[0] == COMPONENT_BLUE &&
+      else if (cmpd->types[0] == COMPONENT_BLUE &&
           cmpd->types[1] == COMPONENT_GREEN &&
           cmpd->types[2] == COMPONENT_RED) {
         format = GST_VIDEO_FORMAT_BGR;
@@ -12262,7 +12265,7 @@ qtdemux_get_format_from_uncv (GstQTDemux * qtdemux,
           cmpd->types[3] == COMPONENT_ALPHA) {
         format = GST_VIDEO_FORMAT_RGBA;
       }
-      if (cmpd->types[0] == COMPONENT_RED &&
+      else if (cmpd->types[0] == COMPONENT_RED &&
           cmpd->types[1] == COMPONENT_GREEN &&
           cmpd->types[2] == COMPONENT_BLUE &&
           cmpd->types[3] == COMPONENT_PADDING) {
